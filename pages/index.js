@@ -1,170 +1,116 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
+import useSWR from 'swr';
 import axios from 'axios';
-import io from 'socket.io-client';
 
-// ඔබේ Backend URL එක මෙතැනට දාන්න
-const GALLERY_BASE_URL = 'https://dish-salon.vercel.app';
-const socket = io(GALLERY_BASE_URL); 
+const fetcher = url => axios.get(url).then(res => res.data);
 
-const getAdminConfig = () => {
-    return {
-        headers: { 'Authorization': 'NIMSARA2009' }, // මුරපදය මෙතැනට
-    };
-};
+export default function Home() {
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [passInput, setPassInput] = useState("");
+  const [form, setForm] = useState({ url: "", type: "image", caption: "" });
+  const [editingId, setEditingId] = useState(null);
 
-const GalleryDashboard = ({ isAdminLoggedIn }) => {
-    const [photos, setPhotos] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [filesToUpload, setFilesToUpload] = useState([]);
-    const [caption, setCaption] = useState('');
-    const [isUploading, setIsUploading] = useState(false);
-    const [error, setError] = useState('');
-    const [successMessage, setSuccessMessage] = useState('');
-    const [modalPhotoUrl, setModalPhotoUrl] = useState(null);
-    const [bulkUploadProgress, setBulkUploadProgress] = useState(0);
-    const fileInputRef = useRef(null);
+  // රියල්-ටයිම් දත්ත ලබා ගැනීම (SWR)
+  const { data: posts, mutate } = useSWR('/api/posts', fetcher, { refreshInterval: 1000 });
 
-    useEffect(() => {
-        const fetchPhotos = async () => {
-            try {
-                const res = await axios.get(`${GALLERY_BASE_URL}/api/gallery`);
-                setPhotos(res.data);
-            } catch (err) { setError('Connection failed'); }
-            finally { setLoading(false); }
-        };
-        fetchPhotos();
-        socket.on('gallery_updated', (updatedPhotos) => setPhotos(updatedPhotos));
-        return () => socket.off('gallery_updated');
-    }, []);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const payload = editingId ? { id: editingId, caption: form.caption, password: "NIMSARA2009" } : { ...form, password: "NIMSARA2009" };
+    
+    if (editingId) await axios.put('/api/posts', payload);
+    else await axios.post('/api/posts', payload);
+    
+    setForm({ url: "", type: "image", caption: "" });
+    setEditingId(null);
+    mutate(); // වහාම ඩෑෂ්බෝඩ් එක අප්ඩේට් කරන්න
+    alert("DISH SALON Feed Updated!");
+  };
 
-    const handleBulkUpload = async (e) => {
-        e.preventDefault();
-        setIsUploading(true);
-        const total = filesToUpload.length;
-        for (let i = 0; i < total; i++) {
-            const formData = new FormData();
-            formData.append('image', filesToUpload[i]);
-            formData.append('caption', caption || `Style ${i+1}`);
-            try {
-                await axios.post(`${GALLERY_BASE_URL}/api/gallery/upload`, formData, getAdminConfig());
-                setBulkUploadProgress(Math.round(((i + 1) / total) * 100));
-            } catch (err) { console.error("Upload Error"); }
-        }
-        setIsUploading(false);
-        setFilesToUpload([]);
-        setCaption('');
-        setSuccessMessage('✅ Styles Published Successfully!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-    };
+  const handleDelete = async (id) => {
+    if (confirm("මෙම පෝස්ට් එක ඉවත් කිරීමට ඔබට සහතිකද?")) {
+      await axios.delete(`/api/posts?id=${id}&password=NIMSARA2009`);
+      mutate();
+    }
+  };
 
-    if (loading) return <div style={styles.loading}>Wait, Beauty is loading...</div>;
+  return (
+    <div className="min-h-screen bg-[#050505] text-white font-sans">
+      {/* --- Premium Header --- */}
+      <header className="py-16 text-center border-b border-[#1a1a1a] bg-black">
+        <h1 className="text-6xl md:text-8xl font-black italic text-[#ff4d94] tracking-tighter drop-shadow-2xl">DISH SALON</h1>
+        <p className="mt-4 text-gray-500 uppercase tracking-[0.5em] text-xs font-bold flex items-center justify-center gap-3">
+          <span className="w-8 h-[1px] bg-gray-700"></span> LUXURY STYLE FEED <span className="w-8 h-[1px] bg-gray-700"></span>
+        </p>
+      </header>
 
-    return (
-        <div style={styles.container}>
-            {/* Modal for Full View */}
-            {modalPhotoUrl && (
-                <div style={styles.modal} onClick={() => setModalPhotoUrl(null)}>
-                    <img src={modalPhotoUrl} style={styles.modalImg} alt="View" />
-                </div>
+      {/* --- Admin Login --- */}
+      <div className="flex justify-center p-6">
+        {!isAdmin ? (
+          <div className="flex border border-[#222] rounded-full overflow-hidden bg-[#111] shadow-2xl">
+            <input type="password" placeholder="Admin Access" className="bg-transparent px-6 py-2 outline-none w-40 text-sm" onChange={(e) => setPassInput(e.target.value)} />
+            <button onClick={() => passInput === "NIMSARA2009" && setIsAdmin(true)} className="bg-[#ff4d94] text-white px-6 font-bold hover:bg-white hover:text-black transition-all">LOG IN</button>
+          </div>
+        ) : (
+          <button onClick={() => setIsAdmin(false)} className="text-[#ff4d94] font-bold text-xs uppercase tracking-widest hover:underline">Logout Admin Mode</button>
+        )}
+      </div>
+
+      {/* --- Admin Upload Panel --- */}
+      {isAdmin && (
+        <div className="max-w-xl mx-auto bg-[#111] p-10 rounded-[2.5rem] border border-[#222] my-10 shadow-[0_0_50px_rgba(255,77,148,0.1)]">
+          <h2 className="text-2xl font-bold mb-6 text-[#ff4d94]">{editingId ? "Edit Style Caption" : "Post New Style"}</h2>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            {!editingId && (
+              <>
+                <input className="bg-black border border-[#333] p-4 rounded-2xl outline-none focus:border-[#ff4d94]" placeholder="Paste Image or Video URL" value={form.url} onChange={(e) => setForm({...form, url: e.target.value})} required />
+                <select className="bg-black border border-[#333] p-4 rounded-2xl outline-none appearance-none" onChange={(e) => setForm({...form, type: e.target.value})}>
+                  <option value="image">Still Image (ඡායාරූපය)</option>
+                  <option value="video">Motion Video (වීඩියෝ)</option>
+                </select>
+              </>
             )}
-
-            {/* Premium Header */}
-            <header style={styles.header}>
-                <div style={styles.headerContent}>
-                    <h1 style={styles.logo}>DISH SALON</h1>
-                    <p style={styles.subtitle}>ELEGANCE IN EVERY CUT</p>
-                </div>
-                <div style={styles.statusBadge}>{photos.length} Styles Live</div>
-            </header>
-
-            <main style={styles.main}>
-                {successMessage && <div style={styles.success}>{successMessage}</div>}
-                
-                {/* Admin Upload Section */}
-                {isAdminLoggedIn && (
-                    <section style={styles.uploadCard}>
-                        <h2 style={styles.cardTitle}>Add New Styles ✂️</h2>
-                        <form onSubmit={handleBulkUpload}>
-                            <label style={styles.fileDrop}>
-                                {filesToUpload.length > 0 ? `Selected ${filesToUpload.length} Photos` : "Drop Styles or Click to Select"}
-                                <input type="file" multiple hidden onChange={(e) => setFilesToUpload(Array.from(e.target.files))} />
-                            </label>
-                            <input 
-                                style={styles.input} 
-                                placeholder="Caption (e.g. Bridal Style 2024)" 
-                                value={caption}
-                                onChange={(e) => setCaption(e.target.value)}
-                            />
-                            <button disabled={isUploading} style={styles.btn}>
-                                {isUploading ? `Uploading ${bulkUploadProgress}%` : "PUBLISH TO DASHBOARD"}
-                            </button>
-                        </form>
-                    </section>
-                )}
-
-                {/* Gallery Grid */}
-                <div style={styles.gridHeader}>
-                    <span style={styles.line}></span>
-                    <h3 style={styles.gridTitle}>STYLE PORTFOLIO</h3>
-                    <span style={styles.line}></span>
-                </div>
-
-                <div style={styles.grid}>
-                    {photos.map((photo) => (
-                        <div key={photo._id} style={styles.card} onClick={() => setModalPhotoUrl(photo.photoUrl)}>
-                            <div style={styles.imgContainer}>
-                                <img src={photo.photoUrl} style={styles.img} alt="Style" />
-                                <div style={styles.overlay}>VIEW STYLE</div>
-                            </div>
-                            <div style={styles.cardInfo}>
-                                <p style={styles.caption}>{photo.caption}</p>
-                                <div style={styles.cardFooter}>
-                                    <span style={styles.tag}>Premium</span>
-                                    {isAdminLoggedIn && (
-                                        <button style={styles.delBtn} onClick={(e) => {
-                                            e.stopPropagation();
-                                            if(window.confirm("Delete?")) axios.delete(`${GALLERY_BASE_URL}/api/gallery/${photo._id}`, getAdminConfig());
-                                        }}>🗑️</button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </main>
+            <textarea className="bg-black border border-[#333] p-4 rounded-2xl outline-none focus:border-[#ff4d94] h-28" placeholder="Style Description..." value={form.caption} onChange={(e) => setForm({...form, caption: e.target.value})} required />
+            <button className="bg-[#ff4d94] text-white p-4 rounded-2xl font-black hover:scale-105 transition-transform shadow-lg">PUBLISH TO FEED</button>
+          </form>
         </div>
-    );
-};
+      )}
 
-const styles = {
-    container: { backgroundColor: '#0c0c0c', minHeight: '100vh', color: '#fff', fontFamily: "'Playfair Display', serif" },
-    header: { padding: '60px 20px', textAlign: 'center', borderBottom: '1px solid #222', background: 'radial-gradient(circle, #1a1a1a 0%, #0c0c0c 100%)' },
-    logo: { fontSize: '50px', fontWeight: '900', color: '#d4af37', letterSpacing: '5px', margin: 0 },
-    subtitle: { color: '#888', letterSpacing: '8px', fontSize: '12px', marginTop: '10px' },
-    statusBadge: { display: 'inline-block', padding: '5px 15px', border: '1px solid #d4af37', color: '#d4af37', borderRadius: '20px', fontSize: '12px', marginTop: '20px' },
-    main: { maxWidth: '1200px', margin: '0 auto', padding: '40px 20px' },
-    uploadCard: { background: '#111', padding: '30px', borderRadius: '15px', border: '1px solid #222', marginBottom: '50px' },
-    cardTitle: { color: '#d4af37', marginBottom: '20px', fontSize: '20px' },
-    fileDrop: { display: 'block', padding: '40px', border: '2px dashed #333', textAlign: 'center', borderRadius: '10px', cursor: 'pointer', color: '#666', marginBottom: '20px' },
-    input: { width: '100%', padding: '15px', background: '#000', border: '1px solid #222', borderRadius: '8px', color: '#fff', marginBottom: '20px', boxSizing: 'border-box' },
-    btn: { width: '100%', padding: '15px', backgroundColor: '#d4af37', color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '8px', cursor: 'pointer' },
-    gridHeader: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', marginBottom: '40px' },
-    gridTitle: { color: '#fff', fontSize: '18px', letterSpacing: '3px' },
-    line: { height: '1px', width: '50px', backgroundColor: '#d4af37' },
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '30px' },
-    card: { background: '#111', borderRadius: '20px', overflow: 'hidden', border: '1px solid #222', transition: 'transform 0.3s' },
-    imgContainer: { height: '400px', position: 'relative', overflow: 'hidden' },
-    img: { width: '100%', height: '100%', objectFit: 'cover' },
-    overlay: { position: 'absolute', inset: 0, background: 'rgba(212, 175, 55, 0.8)', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', opacity: 0, transition: '0.3s' },
-    cardInfo: { padding: '20px' },
-    caption: { fontSize: '18px', fontWeight: '600', marginBottom: '10px' },
-    cardFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-    tag: { fontSize: '10px', color: '#888', textTransform: 'uppercase' },
-    delBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px' },
-    success: { padding: '15px', background: '#d4af37', color: '#000', borderRadius: '10px', marginBottom: '20px', textAlign: 'center', fontWeight: 'bold' },
-    modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
-    modalImg: { maxWidth: '100%', maxHeight: '90vh', borderRadius: '10px' },
-    loading: { height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d4af37', fontSize: '24px' }
-};
+      {/* --- Real-time Style Feed --- */}
+      <main className="max-w-[1400px] mx-auto p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+        {posts?.map((post) => (
+          <div key={post._id} className="bg-[#0a0a0a] rounded-[2rem] overflow-hidden border border-[#1a1a1a] group hover:border-[#ff4d94] transition-all duration-500">
+            {/* Media Area */}
+            <div className="h-[450px] relative overflow-hidden bg-black">
+              {post.type === 'image' ? (
+                <img src={post.url} className="w-full h-full object-cover group-hover:scale-110 transition duration-700" alt="Dish Salon" />
+              ) : (
+                <video src={post.url} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+              )}
+              {/* Live Tag */}
+              <div className="absolute top-5 left-5 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span className="text-[10px] font-bold tracking-widest uppercase">Live Portfolio</span>
+              </div>
+            </div>
+            
+            {/* Post Details */}
+            <div className="p-8">
+              <p className="text-xl font-medium italic text-gray-200 leading-snug">"{post.caption}"</p>
+              
+              {isAdmin && (
+                <div className="mt-6 flex gap-4">
+                  <button onClick={() => {setEditingId(post._id); setForm({...form, caption: post.caption}); window.scrollTo(0,0);}} className="text-xs font-bold text-gray-500 hover:text-white uppercase tracking-widest transition">Edit</button>
+                  <button onClick={() => handleDelete(post._id)} className="text-xs font-bold text-red-900 hover:text-red-500 uppercase tracking-widest transition">Delete</button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </main>
 
-export default GalleryDashboard;
+      <footer className="text-center py-20 border-t border-[#1a1a1a] mt-10">
+        <p className="text-gray-600 text-[10px] tracking-[0.5em] font-bold">© 2024 DISH SALON • POWERED BY REAL-TIME FEED</p>
+      </footer>
+    </div>
+  );
+}
