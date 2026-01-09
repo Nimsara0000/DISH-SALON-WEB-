@@ -3,7 +3,7 @@ import axios from 'axios';
 import io from 'socket.io-client';
 
 // ඔබේ Backend URL එක මෙතැනට දාන්න
-const GALLERY_BASE_URL = 'https://kmv-gallery-backend-4nzw.onrender.com';
+const GALLERY_BASE_URL = 'https://dish-salon.vercel.app';
 const socket = io(GALLERY_BASE_URL); 
 
 const getAdminConfig = () => {
